@@ -17,6 +17,8 @@ var (
 	multipleExclRe = regexp.MustCompile(`!{2,}`)
 )
 
+var sensitiveRe = regexp.MustCompile(`\b(password|api[_-]?key|token|secret)\b`)
+
 var logMethods = map[string]struct{}{
 	"Info":  {},
 	"Error": {},
@@ -196,12 +198,5 @@ func hasSpecialChars(s string) bool {
 }
 
 func hasSensitiveData(s string) bool {
-	keywords := []string{"password", "api_key", "token", "secret", "key", "pass"}
-	s = strings.ToLower(s)
-	for _, kw := range keywords {
-		if strings.Contains(s, kw) {
-			return true
-		}
-	}
-	return false
+	return sensitiveRe.MatchString(strings.ToLower(s))
 }
