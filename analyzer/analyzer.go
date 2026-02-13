@@ -20,12 +20,14 @@ var (
 var sensitiveRe = regexp.MustCompile(`\b(password|api[_-]?key|token|secret)\b`)
 
 var logMethods = map[string]struct{}{
-	"Info":  {},
-	"Error": {},
-	"Warn":  {},
-	"Debug": {},
-	"Infow": {},
-	"Warnw": {},
+	"Info":   {},
+	"Error":  {},
+	"Warn":   {},
+	"Debug":  {},
+	"Infow":  {},
+	"Warnw":  {},
+	"Debugw": {},
+	"Errorw": {},
 }
 
 var Analyzer = &analysis.Analyzer{
@@ -76,6 +78,29 @@ func collectLogImports(pass *analysis.Pass) (map[string]bool, map[string]bool) {
 	return slogAliases, zapAliases
 }
 
+func unwrapLogger(expr ast.Expr) *ast.Ident {
+	for {
+		switch v := expr.(type) {
+		case *ast.Ident:
+			return v
+
+		case *ast.CallExpr:
+			if sel, ok := v.Fun.(*ast.SelectorExpr); ok {
+				expr = sel.X
+				continue
+			}
+			return nil
+
+		case *ast.SelectorExpr:
+			expr = v.X
+			continue
+
+		default:
+			return nil
+		}
+	}
+}
+
 func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr, slogAliases, zapAliases map[string]bool) (string, string, token.Pos) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
@@ -86,8 +111,8 @@ func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr, slogAliases, zapAli
 		return "", "", token.NoPos
 	}
 
-	recvIdent, ok := sel.X.(*ast.Ident)
-	if !ok {
+	recvIdent := unwrapLogger(sel.X)
+	if recvIdent == nil {
 		return "", "", token.NoPos
 	}
 

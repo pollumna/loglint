@@ -31,4 +31,8 @@ func main() {
 	slog.Info("token: " + token + " end")    // "token:  end"
 	slog.Info(username + " API key: " + key) // " API key: "
 
+	logger.Info("msg")
+	logger.With().Info("msg")
+	logger.With().With().Error("password")
+
 }
