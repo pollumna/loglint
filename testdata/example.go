@@ -8,6 +8,9 @@ func main() {
 	defer logger.Sync()
 
 	password := "password"
+	token := "token"
+	key := "key"
+	username := "username"
 
 	slog.Info("Starting server")       // Uppercase
 	slog.Error("ошибка")               // Cyrillic
@@ -23,4 +26,8 @@ func main() {
 	logger.Info("password: " + password) // Sensitive
 	logger.Info("server started")        // OK
 
+	slog.Info("password: " + password)       // "password: "
+	slog.Info(password + "password: ")       // "password: "
+	slog.Info("token: " + token + " end")    // "token:  end"
+	slog.Info(username + " API key: " + key) // " API key: "
 }

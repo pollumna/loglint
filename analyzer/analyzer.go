@@ -113,10 +113,26 @@ func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr, slogAliases, zapAli
 }
 
 func extractMessage(arg ast.Expr) (string, token.Pos) {
-	if lit, ok := arg.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-		if str, err := strconv.Unquote(lit.Value); err == nil {
-			return str, lit.Pos()
+	switch expr := arg.(type) {
+	case *ast.BasicLit:
+		if expr.Kind == token.STRING {
+			if str, err := strconv.Unquote(expr.Value); err == nil {
+				return str, expr.Pos()
+			}
 		}
+
+	case *ast.BinaryExpr:
+		if expr.Op == token.ADD {
+			leftText, _ := extractMessage(expr.X)
+			rightText, _ := extractMessage(expr.Y)
+			return leftText + rightText, expr.Pos()
+		}
+
+	case *ast.ParenExpr:
+		return extractMessage(expr.X)
+
+	default:
+		return "", expr.Pos()
 	}
 	return "", arg.Pos()
 }
