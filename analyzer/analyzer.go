@@ -17,6 +17,15 @@ var (
 	multipleExclRe = regexp.MustCompile(`!{2,}`)
 )
 
+var logMethods = map[string]struct{}{
+	"Info":  {},
+	"Error": {},
+	"Warn":  {},
+	"Debug": {},
+	"Infow": {},
+	"Warnw": {},
+}
+
 var Analyzer = &analysis.Analyzer{
 	Name: "loglint",
 	Doc:  "checks log messages according to style rules",
@@ -71,8 +80,7 @@ func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr, slogAliases, zapAli
 		return "", "", token.NoPos
 	}
 
-	logMethods := map[string]bool{"Info": true, "Error": true, "Warn": true, "Debug": true}
-	if !logMethods[sel.Sel.Name] {
+	if _, ok := logMethods[sel.Sel.Name]; !ok {
 		return "", "", token.NoPos
 	}
 
