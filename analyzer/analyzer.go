@@ -11,6 +11,12 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
+var (
+	specialCharRe  = regexp.MustCompile(`[^\p{L}\p{N}\s-]`)
+	multipleDotsRe = regexp.MustCompile(`\.{2,}`)
+	multipleExclRe = regexp.MustCompile(`!{2,}`)
+)
+
 var Analyzer = &analysis.Analyzer{
 	Name: "loglint",
 	Doc:  "checks log messages according to style rules",
@@ -83,11 +89,6 @@ func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr, slogAliases, zapAli
 		if msg != "" {
 			return sel.Sel.Name, msg, sel.Pos()
 		}
-	}
-
-	obj := pass.TypesInfo.ObjectOf(recvIdent)
-	if obj == nil {
-		return "", "", token.NoPos
 	}
 
 	typ := pass.TypesInfo.TypeOf(recvIdent)
@@ -174,8 +175,16 @@ func hasNonEnglish(s string) bool {
 }
 
 func hasSpecialChars(s string) bool {
-	re := regexp.MustCompile(`[!@#$%^&*(),.?":;{}|<>🚀😊✨]`)
-	return re.MatchString(s)
+	if specialCharRe.MatchString(s) {
+		return true
+	}
+	if multipleDotsRe.MatchString(s) {
+		return true
+	}
+	if multipleExclRe.MatchString(s) {
+		return true
+	}
+	return false
 }
 
 func hasSensitiveData(s string) bool {

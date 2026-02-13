@@ -30,4 +30,5 @@ func main() {
 	slog.Info(password + "password: ")       // "password: "
 	slog.Info("token: " + token + " end")    // "token:  end"
 	slog.Info(username + " API key: " + key) // " API key: "
+
 }
