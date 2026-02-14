@@ -11,9 +11,9 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-var specialCharRe = regexp.MustCompile(`[^\p{L}\p{N}\s\.\-_:%]`)
+var specialCharRe = regexp.MustCompile(`[^\p{L}\p{N}\s\-_:%]`)
 
-var sensitiveRe = regexp.MustCompile(`(?i)\b(password|api[_-]?key|token|secret)\b`)
+var sensitiveRe = regexp.MustCompile(`(?i)\b(password|api[_-]?key|token|secret|key)\b`)
 
 var logMethods = map[string]struct{}{
 	"Info":   {},
@@ -60,20 +60,63 @@ func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr) (string, string, to
 		return "", "", token.NoPos
 	}
 
-	recvType := pass.TypesInfo.TypeOf(sel.X)
-	if !isLoggerType(recvType) {
+	recvIdent := unwrapLogger(sel.X)
+	if recvIdent == nil {
+		return "", "", token.NoPos
+	}
+
+	typ := pass.TypesInfo.TypeOf(recvIdent)
+	isLogger := false
+
+	if typ != nil && isLoggerType(typ) {
+		isLogger = true
+	} else {
+		obj := pass.TypesInfo.ObjectOf(recvIdent)
+		if pkg, ok := obj.(*types.PkgName); ok {
+			path := pkg.Imported().Path()
+			if path == "log/slog" || path == "go.uber.org/zap" {
+				isLogger = true
+			}
+		}
+	}
+
+	if !isLogger {
 		return "", "", token.NoPos
 	}
 
 	if len(call.Args) == 0 {
 		return "", "", token.NoPos
 	}
+
 	msg, pos := extractMessage(call.Args[0])
 	if msg != "" {
 		return sel.Sel.Name, msg, pos
 	}
 
 	return "", "", token.NoPos
+}
+
+func unwrapLogger(expr ast.Expr) *ast.Ident {
+	for {
+		switch v := expr.(type) {
+		case *ast.Ident:
+			return v
+
+		case *ast.CallExpr:
+			if sel, ok := v.Fun.(*ast.SelectorExpr); ok {
+				expr = sel.X
+				continue
+			}
+			return nil
+
+		case *ast.SelectorExpr:
+			expr = v.X
+			continue
+
+		default:
+			return nil
+		}
+	}
 }
 
 func isLoggerType(typ types.Type) bool {
@@ -132,26 +175,23 @@ func extractMessage(expr ast.Expr) (string, token.Pos) {
 	case *ast.CallExpr:
 		var combined string
 		var pos token.Pos
-
 		for _, arg := range e.Args {
 			str, p := extractMessage(arg)
 			if str != "" {
+				combined += str
 				if pos == token.NoPos {
 					pos = p
 				}
-				combined += str
 			}
 		}
-		if combined != "" {
-			return combined, e.Pos()
-		}
+		return combined, pos
 	}
 
 	return "", token.NoPos
 }
 
 func checkRules(pass *analysis.Pass, funcName, msg string, pos token.Pos) {
-	issues := []string{}
+	var issues []string
 
 	if len(msg) > 0 {
 		runes := []rune(msg)

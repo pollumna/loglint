@@ -2,9 +2,9 @@ package testdata
 
 import (
 	"fmt"
-	slog "log/slog"
+	"go.uber.org/zap"
+	"log/slog"
 )
-import zap "go.uber.org/zap"
 
 func main() {
 	logger, _ := zap.NewProduction()
