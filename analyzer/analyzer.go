@@ -3,21 +3,17 @@ package analyzer
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 	"regexp"
 	"strconv"
-	"strings"
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
 )
 
-var (
-	specialCharRe  = regexp.MustCompile(`[^\p{L}\p{N}\s-]`)
-	multipleDotsRe = regexp.MustCompile(`\.{2,}`)
-	multipleExclRe = regexp.MustCompile(`!{2,}`)
-)
+var specialCharRe = regexp.MustCompile(`[^\p{L}\p{N}\s\.\-_:%]`)
 
-var sensitiveRe = regexp.MustCompile(`\b(password|api[_-]?key|token|secret)\b`)
+var sensitiveRe = regexp.MustCompile(`(?i)\b(password|api[_-]?key|token|secret)\b`)
 
 var logMethods = map[string]struct{}{
 	"Info":   {},
@@ -28,6 +24,9 @@ var logMethods = map[string]struct{}{
 	"Warnw":  {},
 	"Debugw": {},
 	"Errorw": {},
+	"Fatal":  {},
+	"Panic":  {},
+	"DPanic": {},
 }
 
 var Analyzer = &analysis.Analyzer{
@@ -37,12 +36,11 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	slogAliases, zapAliases := collectLogImports(pass)
 
 	for _, file := range pass.Files {
 		ast.Inspect(file, func(node ast.Node) bool {
 			if call, ok := node.(*ast.CallExpr); ok {
-				if logFunc, msg, pos := analyzeLogCall(pass, call, slogAliases, zapAliases); logFunc != "" && msg != "" {
+				if logFunc, msg, pos := analyzeLogCall(pass, call); logFunc != "" && msg != "" {
 					checkRules(pass, logFunc, msg, pos)
 				}
 			}
@@ -52,56 +50,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func collectLogImports(pass *analysis.Pass) (map[string]bool, map[string]bool) {
-	slogAliases, zapAliases := make(map[string]bool), make(map[string]bool)
-
-	for _, file := range pass.Files {
-		for _, imp := range file.Imports {
-			path, err := strconv.Unquote(imp.Path.Value)
-			if err != nil {
-				continue
-			}
-
-			alias := "slog"
-			if imp.Name != nil {
-				alias = imp.Name.Name
-			}
-
-			switch path {
-			case "log/slog":
-				slogAliases[alias] = true
-			case "go.uber.org/zap":
-				zapAliases[alias] = true
-			}
-		}
-	}
-	return slogAliases, zapAliases
-}
-
-func unwrapLogger(expr ast.Expr) *ast.Ident {
-	for {
-		switch v := expr.(type) {
-		case *ast.Ident:
-			return v
-
-		case *ast.CallExpr:
-			if sel, ok := v.Fun.(*ast.SelectorExpr); ok {
-				expr = sel.X
-				continue
-			}
-			return nil
-
-		case *ast.SelectorExpr:
-			expr = v.X
-			continue
-
-		default:
-			return nil
-		}
-	}
-}
-
-func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr, slogAliases, zapAliases map[string]bool) (string, string, token.Pos) {
+func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr) (string, string, token.Pos) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return "", "", token.NoPos
@@ -111,74 +60,102 @@ func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr, slogAliases, zapAli
 		return "", "", token.NoPos
 	}
 
-	recvIdent := unwrapLogger(sel.X)
-	if recvIdent == nil {
+	recvType := pass.TypesInfo.TypeOf(sel.X)
+	if !isLoggerType(recvType) {
 		return "", "", token.NoPos
 	}
 
-	if slogAliases[recvIdent.Name] || zapAliases[recvIdent.Name] {
-		if len(call.Args) == 0 {
-			return "", "", token.NoPos
-		}
-		msg, _ := extractMessage(call.Args[0])
-		if msg != "" {
-			return sel.Sel.Name, msg, sel.Pos()
-		}
-	}
-
-	typ := pass.TypesInfo.TypeOf(recvIdent)
-	if typ == nil {
+	if len(call.Args) == 0 {
 		return "", "", token.NoPos
 	}
-
-	typeStr := typ.String()
-	isSlogLogger := strings.Contains(typeStr, "slog.Logger")
-	isZapLogger := strings.Contains(typeStr, "zap.Logger")
-
-	if isSlogLogger || isZapLogger {
-		if len(call.Args) == 0 {
-			return "", "", token.NoPos
-		}
-		msg, _ := extractMessage(call.Args[0])
-		if msg != "" {
-			return sel.Sel.Name, msg, sel.Pos()
-		}
+	msg, pos := extractMessage(call.Args[0])
+	if msg != "" {
+		return sel.Sel.Name, msg, pos
 	}
 
 	return "", "", token.NoPos
 }
 
-func extractMessage(arg ast.Expr) (string, token.Pos) {
-	switch expr := arg.(type) {
+func isLoggerType(typ types.Type) bool {
+	if ptr, ok := typ.(*types.Pointer); ok {
+		typ = ptr.Elem()
+	}
+
+	named, ok := typ.(*types.Named)
+	if !ok {
+		return false
+	}
+
+	obj := named.Obj()
+	if obj == nil || obj.Pkg() == nil {
+		return false
+	}
+
+	pkgPath := obj.Pkg().Path()
+	typeName := obj.Name()
+
+	if pkgPath == "log/slog" && typeName == "Logger" {
+		return true
+	}
+
+	if pkgPath == "go.uber.org/zap" && typeName == "Logger" {
+		return true
+	}
+
+	return false
+}
+
+func extractMessage(expr ast.Expr) (string, token.Pos) {
+	switch e := expr.(type) {
+
 	case *ast.BasicLit:
-		if expr.Kind == token.STRING {
-			if str, err := strconv.Unquote(expr.Value); err == nil {
-				return str, expr.Pos()
+		if e.Kind == token.STRING {
+			if str, err := strconv.Unquote(e.Value); err == nil {
+				return str, e.Pos()
 			}
 		}
 
 	case *ast.BinaryExpr:
-		if expr.Op == token.ADD {
-			leftText, _ := extractMessage(expr.X)
-			rightText, _ := extractMessage(expr.Y)
-			return leftText + rightText, expr.Pos()
+		if e.Op == token.ADD {
+			left, lpos := extractMessage(e.X)
+			right, rpos := extractMessage(e.Y)
+
+			if lpos != token.NoPos {
+				return left + right, lpos
+			}
+			return left + right, rpos
 		}
 
 	case *ast.ParenExpr:
-		return extractMessage(expr.X)
+		return extractMessage(e.X)
 
-	default:
-		return "", expr.Pos()
+	case *ast.CallExpr:
+		var combined string
+		var pos token.Pos
+
+		for _, arg := range e.Args {
+			str, p := extractMessage(arg)
+			if str != "" {
+				if pos == token.NoPos {
+					pos = p
+				}
+				combined += str
+			}
+		}
+		if combined != "" {
+			return combined, e.Pos()
+		}
 	}
-	return "", arg.Pos()
+
+	return "", token.NoPos
 }
 
 func checkRules(pass *analysis.Pass, funcName, msg string, pos token.Pos) {
 	issues := []string{}
 
 	if len(msg) > 0 {
-		firstRune := rune(msg[0])
-		if 'A' <= firstRune && firstRune <= 'Z' {
+		runes := []rune(msg)
+		if len(runes) > 0 && unicode.IsUpper(runes[0]) {
 			issues = append(issues, "message must start with lowercase letter")
 		}
 	}
@@ -202,7 +179,7 @@ func checkRules(pass *analysis.Pass, funcName, msg string, pos token.Pos) {
 
 func hasNonEnglish(s string) bool {
 	for _, r := range s {
-		if r > unicode.MaxASCII {
+		if unicode.IsLetter(r) && r > unicode.MaxASCII {
 			return true
 		}
 	}
@@ -210,18 +187,9 @@ func hasNonEnglish(s string) bool {
 }
 
 func hasSpecialChars(s string) bool {
-	if specialCharRe.MatchString(s) {
-		return true
-	}
-	if multipleDotsRe.MatchString(s) {
-		return true
-	}
-	if multipleExclRe.MatchString(s) {
-		return true
-	}
-	return false
+	return specialCharRe.MatchString(s)
 }
 
 func hasSensitiveData(s string) bool {
-	return sensitiveRe.MatchString(strings.ToLower(s))
+	return sensitiveRe.MatchString(s)
 }

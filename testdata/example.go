@@ -1,6 +1,9 @@
 package testdata
 
-import slog "log/slog"
+import (
+	"fmt"
+	slog "log/slog"
+)
 import zap "go.uber.org/zap"
 
 func main() {
@@ -34,5 +37,7 @@ func main() {
 	logger.Info("msg")
 	logger.With().Info("msg")
 	logger.With().With().Error("password")
+
+	logger.Info(fmt.Sprintf("user password %s", password))
 
 }
