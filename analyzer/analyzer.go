@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"golang.org/x/tools/go/analysis/passes/inspect"
 	"regexp"
 	"strconv"
 	"unicode"
@@ -34,6 +35,9 @@ var Analyzer = &analysis.Analyzer{
 	Name: "loglint",
 	Doc:  "checks log messages according to style rules",
 	Run:  run,
+	Requires: []*analysis.Analyzer{
+		inspect.Analyzer,
+	},
 }
 
 // run - основной entry-point. Проходит по всем файлам пакета и ищет вызовы функций.
@@ -57,6 +61,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 // analyzeLogCall возвращает имя метода, строку из сообщения, позицию в исходнике.
 // Если вызов не является логгером или нет сообщений - возвращает "", "", token.NoPos.
 func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr) (string, string, token.Pos) {
+
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return "", "", token.NoPos

@@ -1,0 +1,6 @@
+version: v2.9.0
+plugins:
+
+  # a plugin from local source
+  - module: 'loglint'
+    path: .
