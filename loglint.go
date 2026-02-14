@@ -4,7 +4,7 @@ import (
 	"github.com/golangci/plugin-module-register/register"
 	"golang.org/x/tools/go/analysis"
 
-	loglint "loglint/analyzer"
+	loglint "github.com/pollumna/loglint/analyzer"
 )
 
 func init() {

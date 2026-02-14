@@ -3,7 +3,7 @@ package main
 import (
 	"golang.org/x/tools/go/analysis/singlechecker"
 
-	"loglint/analyzer"
+	"github.com/pollumna/loglint/analyzer"
 )
 
 func main() {
