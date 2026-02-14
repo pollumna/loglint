@@ -1,4 +1,4 @@
-module loglint
+module github.com/pollumna/loglint
 
 go 1.24.0
 
