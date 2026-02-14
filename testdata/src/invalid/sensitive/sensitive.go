@@ -23,14 +23,13 @@ func f() {
 	slog.Warn("token expired")        // want `no sensitive data keywords allowed`
 	slog.Debug("a Secret info here")  // want `no sensitive data keywords allowed`
 
-	logger.Info(fmt.Sprintf("password reset for %s", "user")) // want `no sensitive data keywords allowed`
-	logger.Info("user token: abc123")                         // want `no sensitive data keywords allowed`
+	logger.Info(fmt.Sprintf("password reset for %s", "user"))               // want `no sensitive data keywords allowed`
+	logger.Info(fmt.Sprintf("username %s password %s", username, password)) // want `no sensitive data keywords allowed`
+	logger.Info("user token: abc123")                                       // want `no sensitive data keywords allowed`
 
 	slog.With().Info("token " + token)                // want `no sensitive data keywords allowed`
 	logger.With().With().Error("key" + key)           // want `no sensitive data keywords allowed`
 	slog.With().With().Info("a Password " + password) // want `no sensitive data keywords allowed`
-
-	logger.Info(fmt.Sprintf("username %s password %s", username, password)) // want `no sensitive data keywords allowed`
 
 	slog.Info("user " + "password")        // want `no sensitive data keywords allowed`
 	logger.With().Error("here " + "token") // want `no sensitive data keywords allowed`

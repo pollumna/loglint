@@ -9,6 +9,7 @@ func goodSlogLogs() {
 
 	logger := slog.Default()
 
+	slog.Info("")
 	fmt.Println("hello")
 
 	slog.Info("server started")
@@ -21,15 +22,11 @@ func goodSlogLogs() {
 	logger.With().With().Error("msg")
 
 	logger.Info(fmt.Sprintf("user"))
+	slog.Info(fmt.Sprintf("user: %s", "alice"))
 
+	slog.Info("" + "text")
 	slog.Info("user " + "logged in")
 	logger.With().Info("user " + "logged in")
 
 	slog.Info(("server started"))
-	slog.Info(fmt.Sprintf("user: %s", "alice"))
-
-	slog.Info("" + "text")
-
-	slog.Info("")
-
 }

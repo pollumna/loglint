@@ -11,10 +11,10 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-var specialCharRe = regexp.MustCompile(`[^\p{L}\p{N}\s\-_:%]`)
+var specialCharRe = regexp.MustCompile(`[^\p{L}\p{N}\s\-_:%]`)                          // Шаблон для поиска запрещённых спецсимволов
+var sensitiveRe = regexp.MustCompile(`(?i)\b(password|api[_-]?key|token|secret|key)\b`) // Шаблон для поиска чувствительных данных
 
-var sensitiveRe = regexp.MustCompile(`(?i)\b(password|api[_-]?key|token|secret|key)\b`)
-
+// logMethods содержит список методов логгеров, которые проверяются линтером
 var logMethods = map[string]struct{}{
 	"Info":   {},
 	"Error":  {},
@@ -29,14 +29,16 @@ var logMethods = map[string]struct{}{
 	"DPanic": {},
 }
 
+// Analyzer - основной объект линтера
 var Analyzer = &analysis.Analyzer{
 	Name: "loglint",
 	Doc:  "checks log messages according to style rules",
 	Run:  run,
 }
 
+// run - основной entry-point. Проходит по всем файлам пакета и ищет вызовы функций.
+// Для каждого вызова функции проверяет, логгер ли, извлекает сообщение и проверяет правила
 func run(pass *analysis.Pass) (interface{}, error) {
-
 	for _, file := range pass.Files {
 		ast.Inspect(file, func(node ast.Node) bool {
 			if call, ok := node.(*ast.CallExpr); ok {
@@ -50,6 +52,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
+// analyzeLogCall анализирует конкретный вызов функции.
+//
+// analyzeLogCall возвращает имя метода, строку из сообщения, позицию в исходнике.
+// Если вызов не является логгером или нет сообщений - возвращает "", "", token.NoPos.
 func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr) (string, string, token.Pos) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
@@ -96,6 +102,7 @@ func analyzeLogCall(pass *analysis.Pass, call *ast.CallExpr) (string, string, to
 	return "", "", token.NoPos
 }
 
+// unwrapLogger разворачивает выражение и ищет основной идентификатор логгера
 func unwrapLogger(expr ast.Expr) *ast.Ident {
 	for {
 		switch v := expr.(type) {
@@ -119,6 +126,7 @@ func unwrapLogger(expr ast.Expr) *ast.Ident {
 	}
 }
 
+// isLoggerType проверяет, является ли тип slog или zap
 func isLoggerType(typ types.Type) bool {
 	if ptr, ok := typ.(*types.Pointer); ok {
 		typ = ptr.Elem()
@@ -148,6 +156,7 @@ func isLoggerType(typ types.Type) bool {
 	return false
 }
 
+// extractMessage рекурсивно извлекает строку из аргумента вызова
 func extractMessage(expr ast.Expr) (string, token.Pos) {
 	switch e := expr.(type) {
 
@@ -190,6 +199,7 @@ func extractMessage(expr ast.Expr) (string, token.Pos) {
 	return "", token.NoPos
 }
 
+// checkRules проверяет правила стиля лог-сообщений и вызывает pass.Reportf для diagnostics
 func checkRules(pass *analysis.Pass, funcName, msg string, pos token.Pos) {
 	var issues []string
 
@@ -217,6 +227,7 @@ func checkRules(pass *analysis.Pass, funcName, msg string, pos token.Pos) {
 	}
 }
 
+// hasNonEnglish проверяет наличие букв не в ASCII
 func hasNonEnglish(s string) bool {
 	for _, r := range s {
 		if unicode.IsLetter(r) && r > unicode.MaxASCII {
@@ -226,10 +237,12 @@ func hasNonEnglish(s string) bool {
 	return false
 }
 
+// hasSpecialChars проверяет наличие запрещённых символов
 func hasSpecialChars(s string) bool {
 	return specialCharRe.MatchString(s)
 }
 
+// hasSensitiveData проверяет наличие ключевых слов чувствительной информации
 func hasSensitiveData(s string) bool {
 	return sensitiveRe.MatchString(s)
 }
