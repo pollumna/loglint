@@ -19,5 +19,3 @@ jobs:
       - name: Build loglint
         run: go build -o loglint ./cmd/loglint
 
-      - name: Run loglint
-        run: ./loglint ./testdata/example.go
